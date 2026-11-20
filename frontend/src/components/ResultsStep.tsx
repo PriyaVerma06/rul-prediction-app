@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -10,9 +10,10 @@ import {
   Cpu,
   Info,
 } from 'lucide-react';
-import { PredictionResponse, ModelInfoResponse, HealthStatus } from '../api/types';
+import { PredictionResponse, ModelInfoResponse, HealthStatus, ExplainResponse } from '../api/types';
 import { useCountUp } from '../hooks/useCountUp';
 import { SensorChartSection } from './SensorChartSection';
+import { AiSummarySection } from './AiSummarySection';
 
 interface ResultsStepProps {
   prediction: PredictionResponse;
@@ -42,6 +43,9 @@ export const ResultsStep: React.FC<ResultsStepProps> = ({
 
   // Animated count-up
   const animatedRul = useCountUp(predicted_rul, 1200);
+
+  // Stored AI explanation for export & clipboard
+  const [explanation, setExplanation] = useState<ExplainResponse | null>(null);
 
   // Status configuration & styling
   const getStatusConfig = (status: HealthStatus) => {
@@ -99,7 +103,15 @@ export const ResultsStep: React.FC<ResultsStepProps> = ({
 Status: ${statusConfig.title} (${health_status.toUpperCase()})
 Predicted Remaining Life: ${predicted_rul.toFixed(2)} cycles (Cap: ${effectiveRulCap})
 Verdict: ${statusConfig.verdict}
-Action: ${statusConfig.action}
+Action: ${statusConfig.action}${
+      explanation?.summary
+        ? `\n\nAI Prognostic Summary (${
+            explanation.source === 'llm'
+              ? `AI-generated: ${explanation.model || 'LLM'}`
+              : 'Auto-generated'
+          }):\n${explanation.summary}`
+        : ''
+    }
 Model: ${effectiveModelType} (${effectiveModelVersion})
 Generated: ${new Date().toISOString()}`;
     navigator.clipboard.writeText(text);
@@ -111,12 +123,21 @@ Generated: ${new Date().toISOString()}`;
     const report = {
       prediction,
       model_info: modelInfo,
+      explanation: explanation
+        ? {
+            summary: explanation.summary,
+            source: explanation.source,
+            model: explanation.model,
+            facts: explanation.facts,
+          }
+        : null,
       summary: {
         status: statusConfig.title,
         predicted_rul,
         rul_cap: effectiveRulCap,
         verdict: statusConfig.verdict,
         action: statusConfig.action,
+        ai_summary: explanation?.summary ?? null,
       },
       exported_at: new Date().toISOString(),
     };
@@ -264,6 +285,17 @@ Generated: ${new Date().toISOString()}`;
             </span>
           </div>
         </div>
+      </section>
+
+      <hr className="border-slate-200/80 dark:border-slate-800" />
+
+      {/* AI PROGNOSTIC SUMMARY SECTION (Unboxed, fluid layout) */}
+      <section>
+        <AiSummarySection
+          readings={readings}
+          onCopySummary={onCopySummary}
+          onSummaryLoaded={setExplanation}
+        />
       </section>
 
       <hr className="border-slate-200/80 dark:border-slate-800" />

@@ -40,6 +40,9 @@ rul-prediction-app/
 │   │   ├── config.py             # Dynamic configuration & path resolution
 │   │   ├── schemas.py            # Pydantic v2 validation models
 │   │   ├── predictor.py          # Artifact loader, scaler, & GRU inference engine
+│   │   ├── insights.py           # Deterministic sensor trend analysis & normalized ranking
+│   │   ├── llm.py                # LLM provider abstraction, retries, & template fallback
+│   │   ├── cache.py              # In-memory TTL cache & sliding-window IP rate limiter
 │   │   └── main.py               # FastAPI application, lifespan, & endpoints
 │   ├── artifacts/
 │   │   ├── final_rul_model.keras # Trained Keras GRU model
@@ -50,11 +53,17 @@ rul-prediction-app/
 │   ├── scripts/
 │   │   └── inspect_artifacts.py  # Utility script to inspect saved artifacts
 │   ├── tests/
-│   │   └── test_api.py           # Comprehensive pytest suite
+│   │   ├── test_api.py           # Core API & prediction test suite
+│   │   ├── test_insights.py      # Telemetry trends & ranking unit tests
+│   │   └── test_explain.py       # LLM fallback, caching, rate limiting, & security tests
 │   ├── .env.example              # Environment variables template
 │   ├── pytest.ini                # Pytest configuration
 │   └── requirements.txt          # Pinned dependencies
-├── frontend/                     # Next.js / React UI (future phase)
+├── frontend/                     # React + Vite + TypeScript single-page app
+│   ├── src/
+│   │   ├── api/                  # Typed API client & request/response interfaces
+│   │   ├── components/           # Stepper, DataStep, AnalyseStep, ResultsStep, AiSummarySection, etc.
+│   │   └── hooks/                # useFlowState, useCountUp, useTheme, useToast
 ├── notebooks/                    # EDA & training notebooks
 ├── .gitignore
 └── README.md
@@ -266,6 +275,159 @@ curl -X POST "http://127.0.0.1:8000/predict/batch" \
   "total_engines": 2
 }
 ```
+
+---
+
+## 🤖 LLM-Powered Prognostic Summaries (`POST /explain`)
+
+The service includes an LLM explanation engine providing natural-language operational interpretations and technical engineering briefs for RUL predictions.
+
+### 1. Multi-Provider Fallback Architecture
+```mermaid
+flowchart TD
+    Req["Request: POST /explain"] --> Cache{"Cache Hit?"}
+    Cache -- Yes --> ResCached["Return 200 (Cached)"]
+    Cache -- No --> Pred["Run RUL Inference & Trends"]
+    Pred --> Prim{"Primary Provider (Gemini)"}
+    Prim -- Success --> RespLLM1["Return 200 (source: 'llm')"]
+    Prim -- Fails / 429 / 5xx / Timeout --> Backup{"Backup Provider (Grok)"}
+    Backup -- Success --> RespLLM2["Return 200 (source: 'llm')"]
+    Backup -- Fails / Unconfigured --> Fallback["Deterministic Template Engine"]
+    Fallback --> RespTemplate["Return 200 (source: 'template')"]
+```
+
+- **Primary Provider:** **Google Gemini** (via Google AI Studio REST API).
+- **Backup Provider:** **Grok** (via xAI OpenAI-compatible REST API).
+- **Graceful Fallback:** If both LLM providers fail or are disabled, the endpoint returns an automatic deterministic summary (`source = "template"`).
+- **Decoupled Architecture:** The prediction engine (`POST /predict`) is completely isolated and never blocked or slowed down by LLM calls.
+
+---
+
+### 2. Obtaining API Keys
+
+#### A. Free Google Gemini API Key (Google AI Studio)
+1. Visit [Google AI Studio](https://aistudio.google.com/).
+2. Sign in with your Google account.
+3. Click **"Get API key"** and choose or create a Google Cloud Project.
+4. Copy the API key and set it as `GEMINI_API_KEY` in `backend/.env`.
+
+#### B. Grok API Key (xAI Console)
+1. Visit the [xAI Console](https://console.x.ai/).
+2. Sign in or create an account.
+3. Navigate to **"API Keys"** and click **"Create API Key"**.
+4. Copy the API key and set it as `GROK_API_KEY` in `backend/.env`.
+
+---
+
+### 3. Environment Configuration
+
+Configure providers in `backend/.env`:
+
+```bash
+# ==============================================================================
+# LLM Provider Configuration for /explain
+# ==============================================================================
+
+# Primary Provider: Google Gemini (Google AI Studio)
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Backup Provider: Grok (xAI API)
+GROK_API_KEY=your_grok_api_key_here
+
+# Provider Routing & Models
+LLM_PRIMARY_PROVIDER=gemini
+LLM_BACKUP_PROVIDER=grok
+GEMINI_MODEL=gemini-1.5-flash
+GROK_MODEL=grok-beta
+
+# Network Timeout and Toggles
+LLM_TIMEOUT_SECONDS=15.0
+LLM_ENABLED=true
+
+# Rate Limiting (per IP per minute) & TTL Cache (seconds)
+EXPLAIN_RATE_LIMIT_PER_MIN=60
+EXPLAIN_CACHE_TTL_SECONDS=300
+```
+
+#### How to Switch Primary and Backup Providers
+Change the routing variables in `backend/.env`:
+```bash
+# Set Grok as primary and Gemini as backup:
+LLM_PRIMARY_PROVIDER=grok
+LLM_BACKUP_PROVIDER=gemini
+```
+
+---
+
+### 4. Testing the `/explain` Endpoint
+
+#### Calling `/explain` via `curl`:
+```bash
+curl -X POST http://127.0.0.1:8000/explain \
+  -H "Content-Type: application/json" \
+  -d '{
+    "readings": [ ... 30 cycles x 22 features ... ],
+    "audience": "general",
+    "language": "en"
+  }'
+```
+
+**Response Format:**
+```json
+{
+  "summary": "This engine has an estimated Remaining Useful Life of 45.2 cycles, subject to the model cap of 125 cycles. Its condition is currently rated as WARNING condition with noticeable sensor divergence. Key telemetry indicators showing the highest relative drift include sensor_4 (rising by 2.5%), sensor_11 (falling by 1.8%). Next step: Increase cycle monitoring frequency and schedule preventive inspection within the next 20 operating cycles. This is a demo model trained on NASA C-MAPSS FD001 and is not intended for real maintenance decisions.",
+  "source": "llm",
+  "facts": {
+    "predicted_rul": 45.2,
+    "rul_cap": 125.0,
+    "health_status": "warning",
+    "top_features": [
+      {
+        "name": "sensor_4",
+        "trend": "rising",
+        "percentage_change": 2.45,
+        "normalized_change": 1.25,
+        "first_5_mean": 1408.2,
+        "last_5_mean": 1419.5
+      }
+    ],
+    "constant_features": ["setting_3", "sensor_1"]
+  },
+  "model": "gemini-1.5-flash"
+}
+```
+
+---
+
+### 5. Simulating Failures & Fallbacks
+
+#### A. Simulating Gemini Failure (Automatic Grok Fallback)
+Set an invalid key for Gemini while keeping a valid Grok key:
+```bash
+GEMINI_API_KEY=invalid_dummy_key_to_force_failure
+GROK_API_KEY=your_valid_grok_key
+```
+Call `/explain`: The server logs a warning that Gemini failed, automatically routes the request to Grok, and returns:
+```json
+{
+  "source": "llm",
+  "model": "grok-beta"
+}
+```
+
+#### B. Simulating Both Providers Unavailable (Deterministic Template Fallback)
+Set `LLM_ENABLED=false` or omit both API keys:
+```bash
+LLM_ENABLED=false
+```
+Call `/explain`: The endpoint immediately returns HTTP 200 with deterministic template output:
+```json
+{
+  "source": "template",
+  "model": null
+}
+```
+The template summary strictly includes the predicted RUL, 125 cycle ceiling, health status, top sensor trends, and the exact NASA disclaimer.
 
 ---
 

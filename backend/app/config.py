@@ -98,3 +98,27 @@ APP_DESCRIPTION: str = (
     "of turbofan aircraft engines based on NASA C-MAPSS FD001 sensor data."
 )
 
+# LLM Provider Configuration
+GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
+GROK_API_KEY: str | None = os.getenv("GROK_API_KEY")
+
+LLM_PRIMARY_PROVIDER: str = os.getenv("LLM_PRIMARY_PROVIDER", "gemini").lower().strip()
+LLM_BACKUP_PROVIDER: str = os.getenv("LLM_BACKUP_PROVIDER", "grok").lower().strip()
+
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GROK_MODEL: str = os.getenv("GROK_MODEL", "grok-beta")
+
+LLM_TIMEOUT_SECONDS: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "15.0"))
+
+raw_llm_enabled = os.getenv("LLM_ENABLED")
+if raw_llm_enabled is not None:
+    LLM_ENABLED: bool = raw_llm_enabled.strip().lower() in ("true", "1", "yes")
+else:
+    # Default: true if at least one provider key is present
+    LLM_ENABLED: bool = bool(GEMINI_API_KEY or GROK_API_KEY)
+
+# Explain Endpoint Caching and Rate Limiting
+EXPLAIN_RATE_LIMIT_PER_MIN: int = int(os.getenv("EXPLAIN_RATE_LIMIT_PER_MIN", "60"))
+EXPLAIN_CACHE_TTL_SECONDS: int = int(os.getenv("EXPLAIN_CACHE_TTL_SECONDS", "300"))
+
+

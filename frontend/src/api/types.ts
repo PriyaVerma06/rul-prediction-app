@@ -52,3 +52,19 @@ export interface BatchPredictionResponse {
   total_engines: number;
 }
 
+export type AudienceType = 'general' | 'engineer';
+
+export interface ExplainRequest {
+  readings: number[][];
+  audience?: AudienceType;
+  language?: string;
+}
+
+export interface ExplainResponse {
+  summary: string;
+  source: 'llm' | 'template';
+  facts: Record<string, any>;
+  model: string | null;
+}
+
+
