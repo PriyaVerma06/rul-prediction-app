@@ -267,3 +267,45 @@ curl -X POST "http://127.0.0.1:8000/predict/batch" \
 }
 ```
 
+---
+
+## 💻 Frontend Application (React + Vite + TypeScript + Tailwind)
+
+The `frontend/` directory contains a single-page prognostic dashboard for operators to inspect sensor trajectories and evaluate Remaining Useful Life.
+
+### 1. Installation
+```bash
+cd frontend
+npm install
+```
+
+### 2. Development Server
+```bash
+cd frontend
+npm run dev
+```
+The application will launch at [http://localhost:5173](http://localhost:5173).
+
+### 3. Production Build
+```bash
+cd frontend
+npm run build
+```
+
+### 4. Running Backend and Frontend Together
+In Terminal 1 (FastAPI backend):
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+In Terminal 2 (React frontend):
+```bash
+cd frontend
+npm run dev
+```
+
+Visit [http://localhost:5173](http://localhost:5173) in your browser. The live backend status indicator in the top header will display **"Backend Online · Model Ready"** in green once connected.
+
+
