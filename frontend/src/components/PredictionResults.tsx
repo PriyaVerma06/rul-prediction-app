@@ -1,70 +1,64 @@
 import React from 'react';
 import {
-  AlertCircle,
   Gauge,
-  Cpu,
-  Clock,
   ShieldCheck,
   ShieldAlert,
   ShieldX,
+  Copy,
+  Download,
+  Info,
+  Cpu,
 } from 'lucide-react';
 import { PredictionResponse, ModelInfoResponse, HealthStatus } from '../api/types';
+import { useCountUp } from '../hooks/useCountUp';
 
 interface PredictionResultsProps {
   prediction: PredictionResponse | null;
   modelInfo: ModelInfoResponse | null;
   isLoading: boolean;
-  error: string | null;
+  onCopyResult: (text: string) => void;
 }
 
 export const PredictionResults: React.FC<PredictionResultsProps> = ({
   prediction,
   modelInfo,
   isLoading,
-  error,
+  onCopyResult,
 }) => {
-  if (error) {
-    return (
-      <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-rose-800 shadow-sm">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <h3 className="font-semibold text-base">Inference Error</h3>
-            <p className="text-sm text-rose-700">{error}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Animated count-up value for RUL
+  const animatedRul = useCountUp(prediction?.predicted_rul ?? 0, 1100);
 
+  // 1. Skeleton Loader while predicting
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm flex flex-col items-center justify-center min-h-[300px] space-y-4">
-        <div className="relative flex items-center justify-center">
-          <div className="w-16 h-16 border-4 border-sky-100 border-t-sky-600 rounded-full animate-spin" />
-          <Gauge className="w-6 h-6 text-sky-600 absolute" />
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6 animate-pulse">
+        <div className="h-4 w-40 bg-slate-200 dark:bg-slate-800 rounded-full" />
+        <div className="flex flex-col items-center justify-center space-y-3 py-6">
+          <div className="w-44 h-24 bg-slate-100 dark:bg-slate-800 rounded-t-full" />
+          <div className="h-10 w-28 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+          <div className="h-3 w-48 bg-slate-100 dark:bg-slate-800 rounded-full" />
         </div>
-        <div className="text-center">
-          <h3 className="text-sm font-semibold text-slate-800">
-            Evaluating Engine Sensor Window...
-          </h3>
-          <p className="text-xs text-slate-500 mt-1">
-            Standardizing features and performing recurrent forward pass on {modelInfo?.model_type || 'neural'} model.
-          </p>
+        <div className="h-12 w-full bg-slate-100 dark:bg-slate-800 rounded-2xl" />
+        <div className="flex justify-between items-center pt-2">
+          <div className="h-6 w-32 bg-slate-200 dark:bg-slate-800 rounded-full" />
+          <div className="h-8 w-24 bg-slate-200 dark:bg-slate-800 rounded-xl" />
         </div>
       </div>
     );
   }
 
+  // 2. Empty State before first prediction
   if (!prediction) {
     return (
-      <div className="bg-white rounded-2xl p-8 border border-dashed border-slate-300 text-center flex flex-col items-center justify-center min-h-[300px] text-slate-400">
-        <Gauge className="w-12 h-12 text-slate-300 mb-3" />
-        <h3 className="font-semibold text-slate-700 text-sm">
-          No Predictions Yet
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-dashed border-slate-300 dark:border-slate-800 text-center flex flex-col items-center justify-center min-h-[340px] space-y-3 transition-colors">
+        <div className="p-4 bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-2xl">
+          <Gauge className="w-10 h-10" />
+        </div>
+        <h3 className="font-bold text-slate-800 dark:text-slate-200 text-base">
+          Awaiting Engine Data
         </h3>
-        <p className="text-xs text-slate-400 max-w-sm mt-1">
-          Load or upload a sensor window and click <strong>&quot;Predict RUL&quot;</strong> to generate prognostic remaining life estimates.
+        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm leading-relaxed">
+          Provide sensor readings on the left and click <strong>&quot;Predict RUL&quot;</strong> to view remaining lifespan estimates, operational health classification, and sensor trends.
         </p>
       </div>
     );
@@ -76,51 +70,36 @@ export const PredictionResults: React.FC<PredictionResultsProps> = ({
   const effectiveModelVersion = prediction.model_version ?? modelInfo?.model_version ?? '1.0.0';
   const effectiveWindowSize = prediction.window_size ?? modelInfo?.window_size ?? 30;
 
-  // Health thresholds from model metadata or defaults
-  const thresholds = modelInfo?.health_thresholds ?? {
-    critical_lte: 30.0,
-    warning_lte: 75.0,
-  };
-
-  // Percentage of lifespan (0 to 100%) against cap
-  const percentage = Math.min(100, Math.max(0, (predicted_rul / effectiveRulCap) * 100));
-
-  // Determine styling based on health status
+  // Status configuration & plain-language interpretation
   const getStatusConfig = (status: HealthStatus) => {
     switch (status) {
       case 'critical':
         return {
           label: 'Critical Condition',
           icon: ShieldX,
-          bgColor: 'bg-rose-50',
-          borderColor: 'border-rose-200',
-          textColor: 'text-rose-700',
-          badgeBg: 'bg-rose-100 border-rose-300 text-rose-800',
-          barColor: 'bg-rose-500',
-          description: `Immediate overhaul or grounding recommended. RUL is critically low (≤ ${thresholds.critical_lte} cycles).`,
+          badgeClass: 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800',
+          interpretation: `Critical failure threshold reached. Estimated ${predicted_rul.toFixed(1)} cycles remaining. Ground engine and perform immediate maintenance.`,
+          bannerBg: 'bg-rose-50/70 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900',
+          color: '#ef4444',
         };
       case 'warning':
         return {
           label: 'Warning / Degraded',
           icon: ShieldAlert,
-          bgColor: 'bg-amber-50',
-          borderColor: 'border-amber-200',
-          textColor: 'text-amber-700',
-          badgeBg: 'bg-amber-100 border-amber-300 text-amber-800',
-          barColor: 'bg-amber-500',
-          description: `Sensor divergence detected. Engine degradation accelerating (${thresholds.critical_lte} < RUL ≤ ${thresholds.warning_lte} cycles).`,
+          badgeClass: 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800',
+          interpretation: `Accelerated sensor degradation detected. Estimated ${predicted_rul.toFixed(1)} cycles remaining. Schedule maintenance inspection soon.`,
+          bannerBg: 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900',
+          color: '#f59e0b',
         };
       case 'healthy':
       default:
         return {
           label: 'Healthy Operating State',
           icon: ShieldCheck,
-          bgColor: 'bg-emerald-50',
-          borderColor: 'border-emerald-200',
-          textColor: 'text-emerald-700',
-          badgeBg: 'bg-emerald-100 border-emerald-300 text-emerald-800',
-          barColor: 'bg-emerald-500',
-          description: `Engine is operating well within nominal design tolerance bounds (> ${thresholds.warning_lte} cycles remaining).`,
+          badgeClass: 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
+          interpretation: `This engine is in good shape. Estimated ${predicted_rul.toFixed(1)} cycles remaining (capped at ${effectiveRulCap}).`,
+          bannerBg: 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900',
+          color: '#10b981',
         };
     }
   };
@@ -128,99 +107,182 @@ export const PredictionResults: React.FC<PredictionResultsProps> = ({
   const statusConfig = getStatusConfig(health_status);
   const StatusIcon = statusConfig.icon;
 
+  // Semicircular gauge calculation:
+  // Angle goes from -180 deg to 0 deg
+  const ratio = Math.min(1, Math.max(0, predicted_rul / effectiveRulCap));
+  const gaugeAngle = -180 + ratio * 180; // needle angle in degrees
+
+  // Copy result handler
+  const handleCopy = () => {
+    const summary = `Turbofan RUL Prediction:
+Status: ${statusConfig.label} (${health_status.toUpperCase()})
+Predicted Life: ${predicted_rul.toFixed(2)} cycles (Cap: ${effectiveRulCap})
+Model: ${effectiveModelType} (${effectiveModelVersion})
+Evaluation Date: ${new Date().toISOString()}`;
+    navigator.clipboard.writeText(summary);
+    onCopyResult('Result summary copied to clipboard!');
+  };
+
+  // Download JSON
+  const handleDownloadJson = () => {
+    const data = {
+      prediction,
+      model_info: modelInfo,
+      generated_at: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `rul_prediction_${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      {/* Top Banner with Health Status */}
-      <div
-        className={`px-6 py-4 border-b flex flex-wrap items-center justify-between gap-3 ${statusConfig.bgColor} ${statusConfig.borderColor}`}
-      >
-        <div className="flex items-center space-x-2.5">
-          <StatusIcon className={`w-6 h-6 ${statusConfig.textColor}`} />
-          <div>
-            <h3 className={`font-bold text-base ${statusConfig.textColor}`}>
-              {statusConfig.label}
-            </h3>
-            <p className="text-xs text-slate-600 mt-0.5">
-              {statusConfig.description}
-            </p>
+    <div
+      id="results-section"
+      className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors"
+    >
+      {/* Header bar with Status Badge */}
+      <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-sky-100 dark:bg-sky-950 text-sky-600 dark:text-sky-400 rounded-lg">
+            <Gauge className="w-4 h-4" />
           </div>
+          <h2 className="font-bold text-slate-900 dark:text-white text-base">
+            Prognostic Assessment
+          </h2>
         </div>
 
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border shadow-sm ${statusConfig.badgeBg}`}
+        {/* Health Status Badge */}
+        <div
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-xs ${statusConfig.badgeClass}`}
         >
-          {health_status}
-        </span>
+          <StatusIcon className="w-3.5 h-3.5" />
+          <span>{statusConfig.label}</span>
+        </div>
       </div>
 
-      <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-        {/* Left: Large RUL Output */}
-        <div className="md:col-span-5 flex flex-col items-center justify-center text-center p-4 border border-slate-100 rounded-2xl bg-gradient-to-b from-slate-50 to-white">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
-            Predicted Useful Life
-          </span>
-          <div className="flex items-baseline gap-1 my-1">
-            <span className="text-5xl sm:text-6xl font-extrabold tracking-tight text-slate-900 font-mono">
-              {predicted_rul.toFixed(1)}
-            </span>
-            <span className="text-sm font-semibold text-slate-500 font-sans">
-              cycles
-            </span>
+      <div className="p-5 sm:p-6 space-y-6">
+        {/* Semicircular Radial Gauge & Big Animated Number */}
+        <div className="flex flex-col items-center justify-center pt-2">
+          {/* SVG Semicircle Gauge */}
+          <div className="relative w-64 h-32 flex items-end justify-center overflow-hidden">
+            <svg viewBox="0 0 200 100" className="w-full h-full">
+              {/* Critical zone: 0 to 30 cycles */}
+              <path
+                d="M 20 95 A 80 80 0 0 1 58 35"
+                fill="none"
+                stroke="#ef4444"
+                strokeWidth="14"
+                strokeLinecap="round"
+                className="opacity-80"
+              />
+              {/* Warning zone: 30 to 75 cycles */}
+              <path
+                d="M 64 30 A 80 80 0 0 1 136 30"
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="14"
+                className="opacity-80"
+              />
+              {/* Healthy zone: 75 to 125 cycles */}
+              <path
+                d="M 142 35 A 80 80 0 0 1 180 95"
+                fill="none"
+                stroke="#10b981"
+                strokeWidth="14"
+                strokeLinecap="round"
+                className="opacity-80"
+              />
+
+              {/* Gauge Pivot center */}
+              <circle cx="100" cy="95" r="7" className="fill-slate-800 dark:fill-slate-200" />
+
+              {/* Dynamic Needle */}
+              <g
+                style={{
+                  transform: `rotate(${gaugeAngle + 90}deg)`,
+                  transformOrigin: '100px 95px',
+                  transition: 'transform 1.1s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                }}
+              >
+                <line
+                  x1="100"
+                  y1="95"
+                  x2="100"
+                  y2="25"
+                  stroke={statusConfig.color}
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                />
+                <circle cx="100" cy="95" r="4" fill="#ffffff" />
+              </g>
+            </svg>
           </div>
 
-          <span className="text-xs text-slate-400 mt-1 font-mono">
-            RUL ceiling cap: {effectiveRulCap} cycles
+          {/* Big Animated Number */}
+          <div className="text-center mt-2">
+            <div className="flex items-baseline justify-center gap-1.5 font-mono">
+              <span className="text-5xl sm:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                {animatedRul.toFixed(1)}
+              </span>
+              <span className="text-base font-semibold text-slate-500 dark:text-slate-400 font-sans">
+                cycles
+              </span>
+            </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+              Operating lifespan capacity: {((predicted_rul / effectiveRulCap) * 100).toFixed(0)}% of {effectiveRulCap} cap
+            </div>
+          </div>
+        </div>
+
+        {/* Plain-Language Interpretation Line */}
+        <div className={`p-4 rounded-2xl border text-xs sm:text-sm font-medium leading-relaxed ${statusConfig.bannerBg}`}>
+          <div className="flex items-start gap-2.5">
+            <StatusIcon className="w-5 h-5 shrink-0 mt-0.5" style={{ color: statusConfig.color }} />
+            <div>{statusConfig.interpretation}</div>
+          </div>
+        </div>
+
+        {/* Note Explaining Cap */}
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-[11px] text-slate-500 dark:text-slate-400">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" />
+          <span>
+            Values above {effectiveRulCap} cycles are shown as {effectiveRulCap} because early-life degradation is hard to measure prior to initial onset.
           </span>
         </div>
 
-        {/* Right: Progress Meter & Lifespan Breakdown */}
-        <div className="md:col-span-7 space-y-4">
-          <div>
-            <div className="flex justify-between items-center text-xs font-medium text-slate-700 mb-1.5">
-              <span>Operational Life Span Capacity</span>
-              <span className="font-mono font-semibold">
-                {percentage.toFixed(1)}% of cap ({predicted_rul.toFixed(1)} / {effectiveRulCap} cycles)
-              </span>
-            </div>
-
-            {/* Visual Progress Bar */}
-            <div className="w-full bg-slate-100 rounded-full h-4 p-0.5 border border-slate-200 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ease-out ${statusConfig.barColor}`}
-                style={{ width: `${percentage}%` }}
-              />
-            </div>
-
-            {/* Dynamic Threshold Legend Markers */}
-            <div className="flex justify-between text-[10px] text-slate-400 mt-1.5 font-mono">
-              <span>0 cycles (Critical)</span>
-              <span>{thresholds.critical_lte} cycles (Warning)</span>
-              <span>{thresholds.warning_lte} cycles (Healthy)</span>
-              <span>{effectiveRulCap} cycles (Cap)</span>
-            </div>
+        {/* Action Buttons & Subtle Model Info */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Subtle Model Info Chip */}
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+            <Cpu className="w-3.5 h-3.5 text-sky-500" />
+            <span>
+              {effectiveModelType} · {effectiveWindowSize} cycles window
+            </span>
           </div>
 
-          {/* Metadata Cards */}
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center space-x-2.5">
-              <Cpu className="w-4 h-4 text-sky-600 shrink-0" />
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Model Architecture</div>
-                <div className="text-xs font-bold text-slate-800 font-mono">
-                  {effectiveModelType} ({effectiveModelVersion})
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center space-x-2.5">
-              <Clock className="w-4 h-4 text-indigo-600 shrink-0" />
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Input Window</div>
-                <div className="text-xs font-bold text-slate-800 font-mono">
-                  {effectiveWindowSize} Consecutive Cycles
-                </div>
-              </div>
-            </div>
+          {/* Export Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition-colors"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy result</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadJson}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/60 font-medium transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download JSON</span>
+            </button>
           </div>
         </div>
       </div>
