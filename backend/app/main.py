@@ -32,9 +32,14 @@ from app.predictor import (
     PredictionError,
     Predictor,
 )
+from app.cache import ExplainCache, InMemoryRateLimiter
+from app.insights import compute_sensor_insights
+from app.llm import get_summary_with_fallback
 from app.schemas import (
     BatchPredictionRequest,
     BatchPredictionResponse,
+    ExplainRequest,
+    ExplainResponse,
     HealthResponse,
     ModelInfoResponse,
     PredictionRequest,
@@ -62,6 +67,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.critical("Failed to load predictor artifacts during startup: %s", e, exc_info=True)
     app.state.predictor = predictor
+    app.state.explain_cache = ExplainCache()
+    app.state.rate_limiter = InMemoryRateLimiter()
     yield
     logger.info("Shutting down %s...", APP_NAME)
 
@@ -85,6 +92,10 @@ app = FastAPI(
         {
             "name": "Predictions",
             "description": "RUL predictions for single engines and batches of engines.",
+        },
+        {
+            "name": "Explanations",
+            "description": "Plain-language and engineering summaries powered by LLM (Gemini primary, Grok backup) with deterministic fallback.",
         },
     ],
 )
@@ -273,3 +284,94 @@ async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         predictions=results,
         total_engines=len(results),
     )
+
+
+@app.post(
+    "/explain",
+    response_model=ExplainResponse,
+    tags=["Explanations"],
+    summary="Explain RUL Prediction and Telemetry Trends",
+    description=(
+        f"Accepts {WINDOW_SIZE} cycles of sensor telemetry, runs RUL inference and deterministic trend insights, "
+        "and generates a plain-language or technical summary powered by LLM (Gemini primary, Grok backup) "
+        "with automatic deterministic fallback."
+    ),
+)
+async def explain_prediction(raw_request: Request, body: ExplainRequest) -> ExplainResponse:
+    rate_limiter: InMemoryRateLimiter = getattr(app.state, "rate_limiter", None)
+    if rate_limiter:
+        rate_limiter.check_rate_limit(raw_request)
+
+    explain_cache: ExplainCache = getattr(app.state, "explain_cache", None)
+    cache_key = ""
+    if explain_cache:
+        cache_key = explain_cache.make_cache_key(body.readings, body.audience, body.language)
+        cached_result = explain_cache.get(cache_key)
+        if cached_result:
+            logger.info("Serving explanation from in-memory cache for key %s", cache_key[:8])
+            return ExplainResponse(**cached_result)
+
+    predictor: Predictor = getattr(app.state, "predictor", None)
+    if not predictor or not predictor.is_loaded:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model is not ready or failed to load.",
+        )
+
+    # 1. Predict RUL
+    predicted_rul = predictor.predict(body.readings)
+    health_status = predictor.determine_health_status(predicted_rul)
+
+    # 2. Compute deterministic sensor insights
+    scale_factors = getattr(predictor.scaler, "scale_", None) if predictor.scaler is not None else None
+    insights = compute_sensor_insights(
+        body.readings,
+        feature_names=predictor.feature_columns,
+        scale_factors=scale_factors,
+    )
+
+    # 3. Construct structured facts object
+    facts = {
+        "predicted_rul": predicted_rul,
+        "rul_cap": predictor.rul_cap,
+        "health_status": health_status.value,
+        "health_thresholds": {
+            "critical_lte": HEALTH_THRESHOLD_CRITICAL,
+            "warning_lte": HEALTH_THRESHOLD_WARNING,
+        },
+        "top_features": [
+            {
+                "name": feat.name,
+                "trend": feat.trend,
+                "percentage_change": feat.percentage_change,
+                "normalized_change": feat.normalized_change,
+                "first_5_mean": feat.first_5_mean,
+                "last_5_mean": feat.last_5_mean,
+            }
+            for feat in insights.top_changing_features
+        ],
+        "constant_features": insights.constant_features,
+        "total_analyzed_features": insights.total_features,
+        "window_cycles": insights.analyzed_cycles,
+    }
+
+    # 4. Generate summary with automatic fallback (Gemini -> Grok -> Template)
+    summary_text, source, model_id = await get_summary_with_fallback(
+        facts=facts,
+        audience=body.audience,
+        language=body.language,
+    )
+
+    response_data = {
+        "summary": summary_text,
+        "source": source,
+        "facts": facts,
+        "model": model_id,
+    }
+
+    # 5. Cache result
+    if explain_cache and cache_key:
+        explain_cache.set(cache_key, response_data)
+
+    return ExplainResponse(**response_data)
+

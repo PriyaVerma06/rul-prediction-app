@@ -3,6 +3,8 @@
  */
 
 import {
+  ExplainRequest,
+  ExplainResponse,
   HealthResponse,
   ModelInfoResponse,
   PredictionRequest,
@@ -104,4 +106,15 @@ export async function predictRul(
     body: JSON.stringify(payload),
   });
 }
+
+/** Request plain-language or engineering telemetry explanation powered by LLM with fallback */
+export async function explainRul(
+  payload: ExplainRequest
+): Promise<ExplainResponse> {
+  return request<ExplainResponse>('/explain', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 
