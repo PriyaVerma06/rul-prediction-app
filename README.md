@@ -18,17 +18,6 @@
 
 ---
 
-## 📸 Screenshots
-
-| 1. Landing Experience | 2. Data Ingestion (CSV / Manual) | 3. Prognostic Results & AI Summary |
-| :---: | :---: | :---: |
-| ![Landing Page](docs/images/landing.png) | ![Data Input Step](docs/images/input.png) | ![Results Dashboard](docs/images/results.png) |
-| *[FILL IN: Add screenshot to docs/images/landing.png]* | *[FILL IN: Add screenshot to docs/images/input.png]* | *[FILL IN: Add screenshot to docs/images/results.png]* |
-
-> *[FILL IN: Optional short demo GIF placeholder at `docs/images/demo.gif`]*
-
----
-
 ## 📑 Table of Contents
 
 - [Overview & Motivation](#-overview--motivation)
