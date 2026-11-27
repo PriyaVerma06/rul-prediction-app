@@ -150,8 +150,8 @@ export const App: React.FC = () => {
         err instanceof ApiError
           ? err.message
           : err instanceof Error
-          ? err.message
-          : 'Analysis inference failed. Please check backend connection.';
+            ? err.message
+            : 'Analysis inference failed. Please check backend connection.';
       dispatch({ type: 'ANALYSIS_ERROR', error: message });
       showToast(message, 'error');
     }
