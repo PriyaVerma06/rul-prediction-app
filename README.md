@@ -215,9 +215,6 @@ rul-prediction-app/
 │       ├── test_api.py            # Health, metadata, and prediction tests
 │       ├── test_explain.py        # LLM fallback, caching, and rate limiting tests
 │       └── test_insights.py       # Deterministic trend and ranking tests
-├── docs/
-│   └── images/
-│       └── .gitkeep
 ├── frontend/
 │   ├── index.html
 │   ├── package.json
